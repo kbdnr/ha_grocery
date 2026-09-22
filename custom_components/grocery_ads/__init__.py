@@ -17,6 +17,7 @@ from .const import (
     STORE_REGISTRY,
 )
 from .coordinator import AggregateCoordinator, GroceryAdsCoordinator
+from .http import GroceryAdsFlyerView
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["sensor"]
@@ -24,6 +25,7 @@ PLATFORMS = ["sensor"]
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     hass.data.setdefault(DOMAIN, {AGGREGATE_OWNER_KEY: None})
+    hass.http.register_view(GroceryAdsFlyerView(hass))
     return True
 
 
