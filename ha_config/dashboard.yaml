@@ -10,12 +10,17 @@
 #
 # PDF flyers embed via the integration's own `/api/grocery_ads/flyer/
 # <store_type>` HTTP view (custom_components/grocery_ads/http.py) rather
-# than the sensor's `urls` attribute directly: that attribute's value is a
-# real store CDN URL that gets re-scraped (and changes) every week, but a
-# native Lovelace `iframe` card's `url` is a static YAML value with no
-# templating support. The integration's view redirects to whatever URL the
-# coordinator most recently found, so the dashboard's iframe url never has
-# to change.
+# than the sensor's `urls` attribute directly, for two reasons: that
+# attribute's value is a real store CDN URL that gets re-scraped (and
+# changes) every week, but a native Lovelace `iframe` card's `url` is a
+# static YAML value with no templating support — and several of these
+# store sites set X-Frame-Options/CSP headers that refuse to be framed by
+# anyone else's page, which blocks the iframe outright if it's pointed at
+# the store's URL directly (even via a redirect, since the browser still
+# ends up navigating there). So the view fetches the flyer bytes
+# server-side and serves them back same-origin: the iframe's `src` never
+# leaves this HTTP view, and it always has whatever flyer the coordinator
+# most recently found.
 #
 # Entity ids below follow HA's standard has_entity_name + device_info
 # derivation: each store's device is named per STORE_REGISTRY (const.py)
@@ -50,157 +55,157 @@ views:
     cards:
       - type: markdown
         title: H Mart This Week
-        content: >
-          {% set items = state_attr('sensor.h_mart_ads', 'items') or [] %}
-          {% if items | length == 0 %}
+        content: |
+          {%- set items = state_attr('sensor.h_mart_ads', 'items') or [] -%}
+          {% if items | length == 0 -%}
           _No data yet — run the scraper._
-          {% else %}
+          {%- else -%}
           | Item | Price | Sale |
           | --- | --- | --- |
-          {% for item in items | sort(attribute='item_name') %}
+          {% for item in items | sort(attribute='item_name') -%}
           | {{ item.item_name }} | ${{ '%.2f' | format(item.price) }} / {{ item.unit }} | {{ item.sale_type }} |
-          {% endfor %}
-          {% endif %}
+          {% endfor -%}
+          {%- endif %}
 
       - type: markdown
         title: Zupan's This Week
-        content: >
-          {% set items = state_attr('sensor.zupan_s_markets_ads', 'items') or [] %}
-          {% if items | length == 0 %}
+        content: |
+          {%- set items = state_attr('sensor.zupan_s_markets_ads', 'items') or [] -%}
+          {% if items | length == 0 -%}
           _No data yet — run the scraper._
-          {% else %}
+          {%- else -%}
           | Item | Price | Sale |
           | --- | --- | --- |
-          {% for item in items | sort(attribute='item_name') %}
+          {% for item in items | sort(attribute='item_name') -%}
           | {{ item.item_name }} | ${{ '%.2f' | format(item.price) }} / {{ item.unit }} | {{ item.sale_type }} |
-          {% endfor %}
-          {% endif %}
+          {% endfor -%}
+          {%- endif %}
 
       - type: markdown
         title: Albertsons This Week
-        content: >
-          {% set items = state_attr('sensor.albertsons_ads', 'items') or [] %}
-          {% if items | length == 0 %}
+        content: |
+          {%- set items = state_attr('sensor.albertsons_ads', 'items') or [] -%}
+          {% if items | length == 0 -%}
           _No data yet — run the scraper._
-          {% else %}
+          {%- else -%}
           | Item | Price | Sale |
           | --- | --- | --- |
-          {% for item in items | sort(attribute='item_name') %}
+          {% for item in items | sort(attribute='item_name') -%}
           | {{ item.item_name }} | ${{ '%.2f' | format(item.price) }} | {{ item.sale_type }} |
-          {% endfor %}
-          {% endif %}
+          {% endfor -%}
+          {%- endif %}
 
       - type: markdown
         title: Safeway This Week
-        content: >
-          {% set items = state_attr('sensor.safeway_ads', 'items') or [] %}
-          {% if items | length == 0 %}
+        content: |
+          {%- set items = state_attr('sensor.safeway_ads', 'items') or [] -%}
+          {% if items | length == 0 -%}
           _No data yet — run the scraper._
-          {% else %}
+          {%- else -%}
           | Item | Price | Sale |
           | --- | --- | --- |
-          {% for item in items | sort(attribute='item_name') %}
+          {% for item in items | sort(attribute='item_name') -%}
           | {{ item.item_name }} | ${{ '%.2f' | format(item.price) }} | {{ item.sale_type }} |
-          {% endfor %}
-          {% endif %}
+          {% endfor -%}
+          {%- endif %}
 
       - type: markdown
         title: Fred Meyer This Week
-        content: >
-          {% set items = state_attr('sensor.fred_meyer_ads', 'items') or [] %}
-          {% if items | length == 0 %}
+        content: |
+          {%- set items = state_attr('sensor.fred_meyer_ads', 'items') or [] -%}
+          {% if items | length == 0 -%}
           _No data yet — run the scraper._
-          {% else %}
+          {%- else -%}
           | Item | Price | Sale |
           | --- | --- | --- |
-          {% for item in items | sort(attribute='item_name') %}
+          {% for item in items | sort(attribute='item_name') -%}
           | {{ item.item_name }} | ${{ '%.2f' | format(item.price) }} | {{ item.sale_type }} |
-          {% endfor %}
-          {% endif %}
+          {% endfor -%}
+          {%- endif %}
 
       - type: markdown
         title: Grocery Outlet This Week
-        content: >
-          {% set items = state_attr('sensor.grocery_outlet_ads', 'items') or [] %}
-          {% if items | length == 0 %}
+        content: |
+          {%- set items = state_attr('sensor.grocery_outlet_ads', 'items') or [] -%}
+          {% if items | length == 0 -%}
           _No data yet — run the scraper._
-          {% else %}
+          {%- else -%}
           | Item | Price | Sale |
           | --- | --- | --- |
-          {% for item in items | sort(attribute='item_name') %}
+          {% for item in items | sort(attribute='item_name') -%}
           | {{ item.item_name }} | ${{ '%.2f' | format(item.price) }} | {{ item.sale_type }} |
-          {% endfor %}
-          {% endif %}
+          {% endfor -%}
+          {%- endif %}
 
       - type: markdown
         title: 99 Ranch Market — Weekly Flyer
-        content: >
-          {% set urls = state_attr('sensor.99_ranch_market_ads', 'urls') or [] %}
-          {% if urls | length == 0 %}
+        content: |
+          {%- set urls = state_attr('sensor.99_ranch_market_ads', 'urls') or [] -%}
+          {% if urls | length == 0 -%}
           _No flyer found this week._
-          {% else %}
+          {%- else -%}
           Valid through {{ states('sensor.99_ranch_market_ads') }}
 
-          {% for url in urls %}
+          {% for url in urls -%}
           ![flyer page]({{ url }})
-          {% endfor %}
-          {% endif %}
+          {% endfor -%}
+          {%- endif %}
 
       - type: markdown
         title: Uwajimaya — Weekly Flyer
-        content: >
-          {% set urls = state_attr('sensor.uwajimaya_ads', 'urls') or [] %}
-          {% if urls | length == 0 %}
+        content: |
+          {%- set urls = state_attr('sensor.uwajimaya_ads', 'urls') or [] -%}
+          {% if urls | length == 0 -%}
           _No flyer found this week._
-          {% else %}
+          {%- else -%}
           Valid through {{ states('sensor.uwajimaya_ads') }} —
           [open in a new tab]({{ urls[0] }})
-          {% endif %}
+          {%- endif %}
       - type: iframe
         url: /api/grocery_ads/flyer/uwajimaya
         aspect_ratio: 141%
 
       - type: markdown
         title: New Seasons Market — Weekly Flyer
-        content: >
-          {% set urls = state_attr('sensor.new_seasons_market_ads', 'urls') or [] %}
-          {% if urls | length == 0 %}
+        content: |
+          {%- set urls = state_attr('sensor.new_seasons_market_ads', 'urls') or [] -%}
+          {% if urls | length == 0 -%}
           _No flyer found this week._
-          {% else %}
+          {%- else -%}
           Valid through {{ states('sensor.new_seasons_market_ads') }} —
           [open in a new tab]({{ urls[0] }})
-          {% endif %}
+          {%- endif %}
       - type: iframe
         url: /api/grocery_ads/flyer/new_seasons
         aspect_ratio: 141%
 
       - type: markdown
         title: Market of Choice — Weekly Flyer
-        content: >
-          {% set urls = state_attr('sensor.market_of_choice_ads', 'urls') or [] %}
-          {% if urls | length == 0 %}
+        content: |
+          {%- set urls = state_attr('sensor.market_of_choice_ads', 'urls') or [] -%}
+          {% if urls | length == 0 -%}
           _No flyer found this week._
-          {% else %}
+          {%- else -%}
           Valid through {{ states('sensor.market_of_choice_ads') }} —
           [open in a new tab]({{ urls[0] }})
-          {% endif %}
+          {%- endif %}
       - type: iframe
         url: /api/grocery_ads/flyer/market_of_choice
         aspect_ratio: 141%
 
       - type: markdown
         title: Asian Family Market (Beaverton) — Weekly Flyer
-        content: >
-          {% set urls = state_attr('sensor.asian_family_market_ads', 'urls') or [] %}
-          {% if urls | length == 0 %}
+        content: |
+          {%- set urls = state_attr('sensor.asian_family_market_ads', 'urls') or [] -%}
+          {% if urls | length == 0 -%}
           _No flyer found this week._
-          {% else %}
+          {%- else -%}
           Valid through {{ states('sensor.asian_family_market_ads') }}
 
-          {% for url in urls %}
+          {% for url in urls -%}
           ![flyer page]({{ url }})
-          {% endfor %}
-          {% endif %}
+          {% endfor -%}
+          {%- endif %}
 
   - title: Lowest Prices
     path: lowest-prices
@@ -208,14 +213,14 @@ views:
     cards:
       - type: markdown
         title: Best Price Per Item (H Mart, Zupan's, Albertsons, Safeway, Fred Meyer, Grocery Outlet)
-        content: >
-          {% set prices = state_attr('sensor.lowest_price', 'prices') or {} %}
-          {% if prices | length == 0 %}
+        content: |
+          {%- set prices = state_attr('sensor.lowest_price', 'prices') or {} -%}
+          {% if prices | length == 0 -%}
           _No data yet — run the scraper._
-          {% endif %}
-          {% for name, info in prices.items() | sort %}
+          {% endif -%}
+          {% for name, info in prices.items() | sort -%}
           **{{ name }}** — ${{ '%.2f' | format(info.price) }} @ {{ info.store }}
-          {% endfor %}
+          {% endfor -%}
 
   - title: New Deals
     path: new-deals
@@ -223,39 +228,39 @@ views:
     cards:
       - type: markdown
         title: New This Week
-        content: >
-          {% set diff = state_attr('sensor.new_deals', 'diff') or {} %}
-          {% set new_items = diff.get('new', []) %}
-          {% if new_items | length == 0 %}
+        content: |
+          {%- set diff = state_attr('sensor.new_deals', 'diff') or {} -%}
+          {%- set new_items = diff.get('new', []) -%}
+          {% if new_items | length == 0 -%}
           _Nothing new since the last scrape._
-          {% endif %}
-          {% for item in new_items %}
+          {% endif -%}
+          {% for item in new_items -%}
           **{{ item.item_name }}** — ${{ '%.2f' | format(item.price) }} ({{ item.store }})
-          {% endfor %}
+          {% endfor -%}
 
       - type: markdown
         title: Price Changes
-        content: >
-          {% set diff = state_attr('sensor.new_deals', 'diff') or {} %}
-          {% set changed = diff.get('changed', []) %}
-          {% if changed | length == 0 %}
+        content: |
+          {%- set diff = state_attr('sensor.new_deals', 'diff') or {} -%}
+          {%- set changed = diff.get('changed', []) -%}
+          {% if changed | length == 0 -%}
           _No price changes since the last scrape._
-          {% endif %}
-          {% for change in changed %}
+          {% endif -%}
+          {% for change in changed -%}
           **{{ change.item.item_name }}** — ${{ '%.2f' | format(change.old_price) }} → ${{ '%.2f' | format(change.item.price) }} ({{ change.item.store }})
-          {% endfor %}
+          {% endfor -%}
 
       - type: markdown
         title: Dropped
-        content: >
-          {% set diff = state_attr('sensor.new_deals', 'diff') or {} %}
-          {% set dropped = diff.get('dropped', []) %}
-          {% if dropped | length == 0 %}
+        content: |
+          {%- set diff = state_attr('sensor.new_deals', 'diff') or {} -%}
+          {%- set dropped = diff.get('dropped', []) -%}
+          {% if dropped | length == 0 -%}
           _Nothing dropped since the last scrape._
-          {% endif %}
-          {% for item in dropped %}
+          {% endif -%}
+          {% for item in dropped -%}
           **{{ item.item_name }}** ({{ item.store }})
-          {% endfor %}
+          {% endfor -%}
 
   - title: Categories
     path: categories
@@ -263,18 +268,18 @@ views:
     cards:
       - type: markdown
         title: Browse by Category
-        content: >
-          {% set items = (state_attr('sensor.h_mart_ads', 'items') or [])
+        content: |
+          {%- set items = (state_attr('sensor.h_mart_ads', 'items') or [])
                           + (state_attr('sensor.zupan_s_markets_ads', 'items') or [])
                           + (state_attr('sensor.albertsons_ads', 'items') or [])
                           + (state_attr('sensor.safeway_ads', 'items') or [])
                           + (state_attr('sensor.fred_meyer_ads', 'items') or [])
-                          + (state_attr('sensor.grocery_outlet_ads', 'items') or []) %}
-          {% set categories = items | map(attribute='category') | map('default', 'Uncategorized', true) | unique | sort | list %}
-          {% for cat in categories %}
+                          + (state_attr('sensor.grocery_outlet_ads', 'items') or []) -%}
+          {%- set categories = items | map(attribute='category') | map('default', 'Uncategorized', true) | unique | sort | list -%}
+          {% for cat in categories -%}
           ### {{ cat if cat else 'Uncategorized' }}
-          {% for item in items if (item.category or 'Uncategorized') == cat %}
+          {% for item in items if (item.category or 'Uncategorized') == cat -%}
           - **{{ item.item_name }}** — ${{ '%.2f' | format(item.price) }}{{ ' / ' + item.unit if item.unit else '' }} ({{ item.store }})
           {% endfor %}
 
-          {% endfor %}
+          {% endfor -%}
