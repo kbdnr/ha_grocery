@@ -69,7 +69,7 @@ custom_components/grocery_ads/
   config_flow.py            # UI setup: pick a store per config entry, dup-entry guard
   coordinator.py              # GroceryAdsCoordinator + AggregateCoordinator
   sensor.py                     # GroceryAdsStoreSensor + the two aggregate sensors
-  http.py                         # stable per-store redirect view for embedding PDF flyers
+  http.py                         # stable per-store view that proxies flyer bytes for iframe embedding
   __init__.py                     # entry setup/unload, aggregate-coordinator lifecycle
   schema.py                         # AdItem + FlyerRef dataclasses
   db.py                              # SQLite read/write + diff logic
@@ -309,7 +309,7 @@ tab).
 6. ~~Lovelace dashboard~~ — `ha_config/dashboard.yaml`, tabbed
    (raw feed / lowest price / new deals / categories), all `markdown`
    cards templated from sensor attributes, plus native `iframe` cards
-   (backed by `http.py`'s redirect view) for embedding PDF flyers inline.
+   (backed by `http.py`'s proxy view) for embedding PDF flyers inline.
 7. ~~`connectors/market_of_choice.py`~~ — done (flyer connector, stable
    redirect endpoint). Whole Foods, World Foods, and Natural Grocers were
    investigated and rejected — see per-store findings above.
