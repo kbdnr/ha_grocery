@@ -3,6 +3,7 @@
   "name": "Grocery Ads",
   "version": "0.1.0",
   "config_flow": true,
+  "dependencies": ["http"],
   "iot_class": "cloud_polling",
   "codeowners": [],
   "requirements": ["requests>=2.31.0", "beautifulsoup4>=4.12.0"],

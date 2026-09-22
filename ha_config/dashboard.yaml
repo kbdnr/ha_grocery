@@ -5,7 +5,17 @@
 # `markdown` cards templated off the entities the `grocery_ads` HACS
 # custom integration creates (custom_components/grocery_ads/) — one
 # config entry per store, added via Settings -> Devices & Services ->
-# Add Integration. No custom cards required.
+# Add Integration. No custom Lovelace cards required — the PDF flyers use
+# the built-in `iframe` card type.
+#
+# PDF flyers embed via the integration's own `/api/grocery_ads/flyer/
+# <store_type>` HTTP view (custom_components/grocery_ads/http.py) rather
+# than the sensor's `urls` attribute directly: that attribute's value is a
+# real store CDN URL that gets re-scraped (and changes) every week, but a
+# native Lovelace `iframe` card's `url` is a static YAML value with no
+# templating support. The integration's view redirects to whatever URL the
+# coordinator most recently found, so the dashboard's iframe url never has
+# to change.
 #
 # Entity ids below follow HA's standard has_entity_name + device_info
 # derivation: each store's device is named per STORE_REGISTRY (const.py)
@@ -17,15 +27,20 @@
 # installing, since a renamed device changes its entity id.
 #
 # Two kinds of stores feed this:
-#  - Structured (H Mart, Zupan's): individual items with price/unit/category,
-#    so they drive the Lowest Price / New Deals / Category tabs.
-#  - Flyer-only (99 Ranch, Uwajimaya, New Seasons): the weekly ad is a PDF or
-#    a set of flyer images with no machine-readable item data, so they're
-#    shown directly (inline images, or a link to the PDF) on the Raw Feed
-#    tab only — they can't participate in price comparison or diffing.
-#    Each flyer store has its own sensor (there is no combined "flyers"
-#    sensor); its `urls`/`media_type` attributes and its state (the flyer's
-#    valid_to date) come from that store's own entity.
+#  - Structured (H Mart, Zupan's, Albertsons, Safeway, Fred Meyer, Grocery
+#    Outlet): individual items with price/category (the last four also lack
+#    a clean `unit` field — Flipp's item data doesn't provide one), so they
+#    drive the Lowest Price / New Deals / Category tabs. The last four go
+#    through a shared third-party aggregator (Flipp) rather than each
+#    store's own site backend — see CLAUDE.md.
+#  - Flyer-only (99 Ranch, Uwajimaya, New Seasons, Market of Choice, Asian
+#    Family Market): the weekly ad is a PDF or a set of flyer images with no
+#    machine-readable item data, so they're shown directly (inline images,
+#    or a link to the PDF) on the Raw Feed tab only — they can't participate
+#    in price comparison or diffing. Each flyer store has its own sensor
+#    (there is no combined "flyers" sensor); its `urls`/`media_type`
+#    attributes and its state (the flyer's valid_to date) come from that
+#    store's own entity.
 
 title: Grocery Ads
 views:
@@ -39,10 +54,13 @@ views:
           {% set items = state_attr('sensor.h_mart_ads', 'items') or [] %}
           {% if items | length == 0 %}
           _No data yet — run the scraper._
-          {% endif %}
-          {% for item in items %}
-          **{{ item.item_name }}** — ${{ '%.2f' | format(item.price) }} / {{ item.unit }} ({{ item.sale_type }})
+          {% else %}
+          | Item | Price | Sale |
+          | --- | --- | --- |
+          {% for item in items | sort(attribute='item_name') %}
+          | {{ item.item_name }} | ${{ '%.2f' | format(item.price) }} / {{ item.unit }} | {{ item.sale_type }} |
           {% endfor %}
+          {% endif %}
 
       - type: markdown
         title: Zupan's This Week
@@ -50,10 +68,69 @@ views:
           {% set items = state_attr('sensor.zupan_s_markets_ads', 'items') or [] %}
           {% if items | length == 0 %}
           _No data yet — run the scraper._
-          {% endif %}
-          {% for item in items %}
-          **{{ item.item_name }}** — ${{ '%.2f' | format(item.price) }} / {{ item.unit }} ({{ item.sale_type }})
+          {% else %}
+          | Item | Price | Sale |
+          | --- | --- | --- |
+          {% for item in items | sort(attribute='item_name') %}
+          | {{ item.item_name }} | ${{ '%.2f' | format(item.price) }} / {{ item.unit }} | {{ item.sale_type }} |
           {% endfor %}
+          {% endif %}
+
+      - type: markdown
+        title: Albertsons This Week
+        content: >
+          {% set items = state_attr('sensor.albertsons_ads', 'items') or [] %}
+          {% if items | length == 0 %}
+          _No data yet — run the scraper._
+          {% else %}
+          | Item | Price | Sale |
+          | --- | --- | --- |
+          {% for item in items | sort(attribute='item_name') %}
+          | {{ item.item_name }} | ${{ '%.2f' | format(item.price) }} | {{ item.sale_type }} |
+          {% endfor %}
+          {% endif %}
+
+      - type: markdown
+        title: Safeway This Week
+        content: >
+          {% set items = state_attr('sensor.safeway_ads', 'items') or [] %}
+          {% if items | length == 0 %}
+          _No data yet — run the scraper._
+          {% else %}
+          | Item | Price | Sale |
+          | --- | --- | --- |
+          {% for item in items | sort(attribute='item_name') %}
+          | {{ item.item_name }} | ${{ '%.2f' | format(item.price) }} | {{ item.sale_type }} |
+          {% endfor %}
+          {% endif %}
+
+      - type: markdown
+        title: Fred Meyer This Week
+        content: >
+          {% set items = state_attr('sensor.fred_meyer_ads', 'items') or [] %}
+          {% if items | length == 0 %}
+          _No data yet — run the scraper._
+          {% else %}
+          | Item | Price | Sale |
+          | --- | --- | --- |
+          {% for item in items | sort(attribute='item_name') %}
+          | {{ item.item_name }} | ${{ '%.2f' | format(item.price) }} | {{ item.sale_type }} |
+          {% endfor %}
+          {% endif %}
+
+      - type: markdown
+        title: Grocery Outlet This Week
+        content: >
+          {% set items = state_attr('sensor.grocery_outlet_ads', 'items') or [] %}
+          {% if items | length == 0 %}
+          _No data yet — run the scraper._
+          {% else %}
+          | Item | Price | Sale |
+          | --- | --- | --- |
+          {% for item in items | sort(attribute='item_name') %}
+          | {{ item.item_name }} | ${{ '%.2f' | format(item.price) }} | {{ item.sale_type }} |
+          {% endfor %}
+          {% endif %}
 
       - type: markdown
         title: 99 Ranch Market — Weekly Flyer
@@ -76,10 +153,12 @@ views:
           {% if urls | length == 0 %}
           _No flyer found this week._
           {% else %}
-          Valid through {{ states('sensor.uwajimaya_ads') }}
-
-          [📄 Open this week's PDF flyer]({{ urls[0] }})
+          Valid through {{ states('sensor.uwajimaya_ads') }} —
+          [open in a new tab]({{ urls[0] }})
           {% endif %}
+      - type: iframe
+        url: /api/grocery_ads/flyer/uwajimaya
+        aspect_ratio: 141%
 
       - type: markdown
         title: New Seasons Market — Weekly Flyer
@@ -88,9 +167,39 @@ views:
           {% if urls | length == 0 %}
           _No flyer found this week._
           {% else %}
-          Valid through {{ states('sensor.new_seasons_market_ads') }}
+          Valid through {{ states('sensor.new_seasons_market_ads') }} —
+          [open in a new tab]({{ urls[0] }})
+          {% endif %}
+      - type: iframe
+        url: /api/grocery_ads/flyer/new_seasons
+        aspect_ratio: 141%
 
-          [📄 Open this week's PDF flyer]({{ urls[0] }})
+      - type: markdown
+        title: Market of Choice — Weekly Flyer
+        content: >
+          {% set urls = state_attr('sensor.market_of_choice_ads', 'urls') or [] %}
+          {% if urls | length == 0 %}
+          _No flyer found this week._
+          {% else %}
+          Valid through {{ states('sensor.market_of_choice_ads') }} —
+          [open in a new tab]({{ urls[0] }})
+          {% endif %}
+      - type: iframe
+        url: /api/grocery_ads/flyer/market_of_choice
+        aspect_ratio: 141%
+
+      - type: markdown
+        title: Asian Family Market (Beaverton) — Weekly Flyer
+        content: >
+          {% set urls = state_attr('sensor.asian_family_market_ads', 'urls') or [] %}
+          {% if urls | length == 0 %}
+          _No flyer found this week._
+          {% else %}
+          Valid through {{ states('sensor.asian_family_market_ads') }}
+
+          {% for url in urls %}
+          ![flyer page]({{ url }})
+          {% endfor %}
           {% endif %}
 
   - title: Lowest Prices
@@ -98,7 +207,7 @@ views:
     icon: mdi:cash-multiple
     cards:
       - type: markdown
-        title: Best Price Per Item (H Mart + Zupan's)
+        title: Best Price Per Item (H Mart, Zupan's, Albertsons, Safeway, Fred Meyer, Grocery Outlet)
         content: >
           {% set prices = state_attr('sensor.lowest_price', 'prices') or {} %}
           {% if prices | length == 0 %}
@@ -156,12 +265,16 @@ views:
         title: Browse by Category
         content: >
           {% set items = (state_attr('sensor.h_mart_ads', 'items') or [])
-                          + (state_attr('sensor.zupan_s_markets_ads', 'items') or []) %}
+                          + (state_attr('sensor.zupan_s_markets_ads', 'items') or [])
+                          + (state_attr('sensor.albertsons_ads', 'items') or [])
+                          + (state_attr('sensor.safeway_ads', 'items') or [])
+                          + (state_attr('sensor.fred_meyer_ads', 'items') or [])
+                          + (state_attr('sensor.grocery_outlet_ads', 'items') or []) %}
           {% set categories = items | map(attribute='category') | map('default', 'Uncategorized', true) | unique | sort | list %}
           {% for cat in categories %}
           ### {{ cat if cat else 'Uncategorized' }}
           {% for item in items if (item.category or 'Uncategorized') == cat %}
-          - **{{ item.item_name }}** — ${{ '%.2f' | format(item.price) }} / {{ item.unit }} ({{ item.store }})
+          - **{{ item.item_name }}** — ${{ '%.2f' | format(item.price) }}{{ ' / ' + item.unit if item.unit else '' }} ({{ item.store }})
           {% endfor %}
 
           {% endfor %}
