@@ -1,0 +1,167 @@
+# Grocery Ads — tabbed Lovelace dashboard.
+#
+# In HA: Settings -> Dashboards -> Add Dashboard -> "Grocery Ads",
+# then switch to YAML mode and paste this in. Built entirely from
+# `markdown` cards templated off the entities the `grocery_ads` HACS
+# custom integration creates (custom_components/grocery_ads/) — one
+# config entry per store, added via Settings -> Devices & Services ->
+# Add Integration. No custom cards required.
+#
+# Entity ids below follow HA's standard has_entity_name + device_info
+# derivation: each store's device is named per STORE_REGISTRY (const.py)
+# and its sensor entity name is "Ads", so the entity id slugifies to
+# `sensor.<device_name>_ads` (e.g. device "H Mart" -> sensor.h_mart_ads).
+# The two aggregate sensors have no device, so their entity id slugifies
+# from _attr_name alone (sensor.lowest_price, sensor.new_deals). Verify
+# these against Settings -> Devices & Services -> Entities after
+# installing, since a renamed device changes its entity id.
+#
+# Two kinds of stores feed this:
+#  - Structured (H Mart, Zupan's): individual items with price/unit/category,
+#    so they drive the Lowest Price / New Deals / Category tabs.
+#  - Flyer-only (99 Ranch, Uwajimaya, New Seasons): the weekly ad is a PDF or
+#    a set of flyer images with no machine-readable item data, so they're
+#    shown directly (inline images, or a link to the PDF) on the Raw Feed
+#    tab only — they can't participate in price comparison or diffing.
+#    Each flyer store has its own sensor (there is no combined "flyers"
+#    sensor); its `urls`/`media_type` attributes and its state (the flyer's
+#    valid_to date) come from that store's own entity.
+
+title: Grocery Ads
+views:
+  - title: Raw Feed
+    path: raw-feed
+    icon: mdi:cart
+    cards:
+      - type: markdown
+        title: H Mart This Week
+        content: >
+          {% set items = state_attr('sensor.h_mart_ads', 'items') or [] %}
+          {% if items | length == 0 %}
+          _No data yet — run the scraper._
+          {% endif %}
+          {% for item in items %}
+          **{{ item.item_name }}** — ${{ '%.2f' | format(item.price) }} / {{ item.unit }} ({{ item.sale_type }})
+          {% endfor %}
+
+      - type: markdown
+        title: Zupan's This Week
+        content: >
+          {% set items = state_attr('sensor.zupan_s_markets_ads', 'items') or [] %}
+          {% if items | length == 0 %}
+          _No data yet — run the scraper._
+          {% endif %}
+          {% for item in items %}
+          **{{ item.item_name }}** — ${{ '%.2f' | format(item.price) }} / {{ item.unit }} ({{ item.sale_type }})
+          {% endfor %}
+
+      - type: markdown
+        title: 99 Ranch Market — Weekly Flyer
+        content: >
+          {% set urls = state_attr('sensor.99_ranch_market_ads', 'urls') or [] %}
+          {% if urls | length == 0 %}
+          _No flyer found this week._
+          {% else %}
+          Valid through {{ states('sensor.99_ranch_market_ads') }}
+
+          {% for url in urls %}
+          ![flyer page]({{ url }})
+          {% endfor %}
+          {% endif %}
+
+      - type: markdown
+        title: Uwajimaya — Weekly Flyer
+        content: >
+          {% set urls = state_attr('sensor.uwajimaya_ads', 'urls') or [] %}
+          {% if urls | length == 0 %}
+          _No flyer found this week._
+          {% else %}
+          Valid through {{ states('sensor.uwajimaya_ads') }}
+
+          [📄 Open this week's PDF flyer]({{ urls[0] }})
+          {% endif %}
+
+      - type: markdown
+        title: New Seasons Market — Weekly Flyer
+        content: >
+          {% set urls = state_attr('sensor.new_seasons_market_ads', 'urls') or [] %}
+          {% if urls | length == 0 %}
+          _No flyer found this week._
+          {% else %}
+          Valid through {{ states('sensor.new_seasons_market_ads') }}
+
+          [📄 Open this week's PDF flyer]({{ urls[0] }})
+          {% endif %}
+
+  - title: Lowest Prices
+    path: lowest-prices
+    icon: mdi:cash-multiple
+    cards:
+      - type: markdown
+        title: Best Price Per Item (H Mart + Zupan's)
+        content: >
+          {% set prices = state_attr('sensor.lowest_price', 'prices') or {} %}
+          {% if prices | length == 0 %}
+          _No data yet — run the scraper._
+          {% endif %}
+          {% for name, info in prices.items() | sort %}
+          **{{ name }}** — ${{ '%.2f' | format(info.price) }} @ {{ info.store }}
+          {% endfor %}
+
+  - title: New Deals
+    path: new-deals
+    icon: mdi:new-box
+    cards:
+      - type: markdown
+        title: New This Week
+        content: >
+          {% set diff = state_attr('sensor.new_deals', 'diff') or {} %}
+          {% set new_items = diff.get('new', []) %}
+          {% if new_items | length == 0 %}
+          _Nothing new since the last scrape._
+          {% endif %}
+          {% for item in new_items %}
+          **{{ item.item_name }}** — ${{ '%.2f' | format(item.price) }} ({{ item.store }})
+          {% endfor %}
+
+      - type: markdown
+        title: Price Changes
+        content: >
+          {% set diff = state_attr('sensor.new_deals', 'diff') or {} %}
+          {% set changed = diff.get('changed', []) %}
+          {% if changed | length == 0 %}
+          _No price changes since the last scrape._
+          {% endif %}
+          {% for change in changed %}
+          **{{ change.item.item_name }}** — ${{ '%.2f' | format(change.old_price) }} → ${{ '%.2f' | format(change.item.price) }} ({{ change.item.store }})
+          {% endfor %}
+
+      - type: markdown
+        title: Dropped
+        content: >
+          {% set diff = state_attr('sensor.new_deals', 'diff') or {} %}
+          {% set dropped = diff.get('dropped', []) %}
+          {% if dropped | length == 0 %}
+          _Nothing dropped since the last scrape._
+          {% endif %}
+          {% for item in dropped %}
+          **{{ item.item_name }}** ({{ item.store }})
+          {% endfor %}
+
+  - title: Categories
+    path: categories
+    icon: mdi:shape-outline
+    cards:
+      - type: markdown
+        title: Browse by Category
+        content: >
+          {% set items = (state_attr('sensor.h_mart_ads', 'items') or [])
+                          + (state_attr('sensor.zupan_s_markets_ads', 'items') or []) %}
+          {% set categories = items | map(attribute='category') | map('default', 'Uncategorized', true) | unique | sort | list %}
+          {% for cat in categories %}
+          ### {{ cat if cat else 'Uncategorized' }}
+          {% for item in items if (item.category or 'Uncategorized') == cat %}
+          - **{{ item.item_name }}** — ${{ '%.2f' | format(item.price) }} / {{ item.unit }} ({{ item.store }})
+          {% endfor %}
+
+          {% endfor %}
