@@ -187,3 +187,95 @@ async def test_unload_last_items_entry_shuts_down_aggregate_coordinator(hass):
 
         assert AGGREGATE_COORDINATOR_KEY not in hass.data[DOMAIN]
         assert aggregate_coordinator._shutdown_requested is True
+
+
+def _mealie_client_patches():
+    foods = [{"id": "f-beef", "name": "beef", "label": {"name": "Meats"}}]
+    return (
+        patch("custom_components.grocery_ads.mealie.MealieClient.group_slug", return_value="home"),
+        patch("custom_components.grocery_ads.mealie.MealieClient.foods", return_value=foods),
+        patch(
+            "custom_components.grocery_ads.mealie.MealieClient.recipe_summaries",
+            return_value=[{"slug": "beef-stew", "name": "Beef Stew", "updatedAt": "t1"}],
+        ),
+        patch("custom_components.grocery_ads.mealie.MealieClient.recipe_food_ids", return_value=["f-beef"]),
+    )
+
+
+@pytest.mark.asyncio
+async def test_mealie_entry_overlays_recipes_on_store_ads_and_follows_store_changes(hass):
+    from custom_components.grocery_ads.const import RECIPE_COORDINATOR_KEY
+
+    p1, p2, p3, p4 = _mealie_client_patches()
+    with p1, p2, p3, p4, patch(
+        "custom_components.grocery_ads.connectors.hmart.HMartConnector.fetch",
+        return_value=[_item("hmart", "Beef")],
+    ):
+        mealie = MockConfigEntry(
+            domain=DOMAIN,
+            data={"store_type": "mealie", "url": "https://mealie.example.com", "token": "secret"},
+        )
+        mealie.add_to_hass(hass)
+        assert await hass.config_entries.async_setup(mealie.entry_id) is True
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        # No stores yet: recipes are indexed, nothing is on sale.
+        state = hass.states.get("sensor.recipes_on_sale")
+        assert state.state == "0"
+        assert state.attributes["recipes_indexed"] == 1
+
+        store = MockConfigEntry(domain=DOMAIN, data={"store_type": "hmart"})
+        store.add_to_hass(hass)
+        await hass.config_entries.async_setup(store.entry_id)
+        await hass.async_block_till_done()
+
+        state = hass.states.get("sensor.recipes_on_sale")
+        assert state.state == "1"
+        recipe = state.attributes["recipes"][0]
+        assert recipe["name"] == "Beef Stew"
+        assert recipe["url"] == "https://mealie.example.com/g/home/r/beef-stew"
+        assert recipe["matches"] == [{"food": "beef", "store": "hmart", "item": "Beef", "price": 10.0}]
+
+        # The Mealie entry is not a store: it never owns the aggregate sensors.
+        assert hass.data[DOMAIN][AGGREGATE_OWNER_KEY] == store.entry_id
+
+        await hass.config_entries.async_unload(store.entry_id)
+        await hass.async_block_till_done()
+        assert hass.states.get("sensor.recipes_on_sale").state == "0"
+
+        await hass.config_entries.async_unload(mealie.entry_id)
+        await hass.async_block_till_done()
+        assert RECIPE_COORDINATOR_KEY not in hass.data[DOMAIN]
+
+
+@pytest.mark.asyncio
+async def test_uwajimaya_entry_serves_items_and_flyer(hass):
+    from custom_components.grocery_ads.schema import FlyerRef
+
+    flyer = FlyerRef(
+        store="uwajimaya", urls=["https://example.com/ad.pdf"], media_type="pdf",
+        valid_from=date(2026, 9, 16), valid_to=date(2026, 9, 22),
+        scraped_at=datetime(2026, 9, 21, 6, 0, 0),
+    )
+    with patch(
+        "custom_components.grocery_ads.connectors.uwajimaya.UwajimayaItemsConnector.fetch",
+        return_value=[_item("uwajimaya", "Thin Sliced Pork Belly", 6.99)],
+    ), patch(
+        "custom_components.grocery_ads.connectors.uwajimaya.UwajimayaConnector.fetch",
+        return_value=flyer,
+    ):
+        # An entry created before Uwajimaya had items: no location_id in its data.
+        entry = MockConfigEntry(domain=DOMAIN, data={"store_type": "uwajimaya"})
+        entry.add_to_hass(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id) is True
+        await hass.async_block_till_done()
+
+        state = hass.states.get("sensor.uwajimaya_ads")
+        assert state.state == "1"
+        assert state.attributes["items"][0]["item_name"] == "Thin Sliced Pork Belly"
+        assert state.attributes["urls"] == ["https://example.com/ad.pdf"]
+        assert state.attributes["flyer_valid_to"] == "2026-09-22"
+        assert hass.data[DOMAIN][entry.entry_id]["coordinator"].flyer == flyer
+
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()

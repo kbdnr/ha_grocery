@@ -56,7 +56,7 @@ class GroceryAdsFlyerView(HomeAssistantView):
             entry = self.hass.config_entries.async_get_entry(entry_id)
             if entry is None or entry.data.get(CONF_STORE_TYPE) != store_type:
                 continue
-            flyer = entry_data["coordinator"].data
+            flyer = entry_data["coordinator"].flyer
             break
 
         if not flyer or not flyer.urls:

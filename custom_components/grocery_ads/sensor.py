@@ -11,6 +11,7 @@ from .const import (
     AGGREGATE_OWNER_KEY,
     CONF_STORE_TYPE,
     DOMAIN,
+    ENTRY_TYPE_MEALIE,
     STORE_KIND_ITEMS,
     STORE_REGISTRY,
 )
@@ -18,8 +19,14 @@ from .const import (
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     domain_data = hass.data[DOMAIN]
-    coordinator = domain_data[entry.entry_id]["coordinator"]
     store_type = entry.data[CONF_STORE_TYPE]
+    if store_type == ENTRY_TYPE_MEALIE:
+        async_add_entities(
+            [GroceryAdsRecipesSensor(domain_data[entry.entry_id]["recipe_coordinator"])]
+        )
+        return
+
+    coordinator = domain_data[entry.entry_id]["coordinator"]
     kind = STORE_REGISTRY[store_type]["kind"]
 
     entities = [GroceryAdsStoreSensor(coordinator, entry, kind)]
@@ -50,19 +57,25 @@ class GroceryAdsStoreSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        data = self.coordinator.data
         if self._kind == STORE_KIND_ITEMS:
-            return len(data) if data else 0
-        return data.valid_to if data else None
+            return len(self.coordinator.data) if self.coordinator.data else 0
+        flyer = self.coordinator.flyer
+        return flyer.valid_to if flyer else None
 
     @property
     def extra_state_attributes(self):
-        data = self.coordinator.data
-        if not data:
-            return {}
-        if self._kind == STORE_KIND_ITEMS:
-            return {"items": [item.to_dict() for item in data]}
-        return {"urls": data.urls, "media_type": data.media_type}
+        attrs = {}
+        if self._kind == STORE_KIND_ITEMS and self.coordinator.data:
+            attrs["items"] = [item.to_dict() for item in self.coordinator.data]
+        flyer = self.coordinator.flyer
+        if flyer:
+            attrs["urls"] = flyer.urls
+            attrs["media_type"] = flyer.media_type
+            if self._kind == STORE_KIND_ITEMS:
+                # A flyer-only store's state is this date; an items store's
+                # state is its item count, so the date goes here instead.
+                attrs["flyer_valid_to"] = flyer.valid_to.isoformat()
+        return attrs
 
 
 class GroceryAdsLowestPriceSensor(CoordinatorEntity, SensorEntity):
@@ -95,3 +108,22 @@ class GroceryAdsNewDealsSensor(CoordinatorEntity, SensorEntity):
         if not self.coordinator.data:
             return {}
         return {"diff": self.coordinator.data["diff"]}
+
+
+class GroceryAdsRecipesSensor(CoordinatorEntity, SensorEntity):
+    _attr_has_entity_name = True
+    _attr_name = "Recipes On Sale"
+    _attr_unique_id = f"{DOMAIN}_recipes_on_sale"
+    # The recipe and food lists run well past the recorder's 16 KB cap on
+    # attributes, and there's nothing to chart in them anyway.
+    _unrecorded_attributes = frozenset({"recipes", "foods"})
+
+    @property
+    def native_value(self):
+        return self.coordinator.data["count"] if self.coordinator.data else None
+
+    @property
+    def extra_state_attributes(self):
+        if not self.coordinator.data:
+            return {}
+        return {key: value for key, value in self.coordinator.data.items() if key != "count"}

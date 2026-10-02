@@ -14,6 +14,14 @@ from ..schema import FlyerRef
 APP_ID = "699266c8c2f2e91c54efa8af"
 ENTITY_URL = f"https://asianfamilymkt.com/api/apps/{APP_ID}/entities/HomepageWeeklyAd"
 DEFAULT_LOCATION_ID = "OR"  # Beaverton, OR
+# `store` filter value -> what the config flow shows. Four stores, and the
+# codes aren't guessable (see above), so they're listed rather than fetched.
+LOCATIONS = {
+    "OR": "Beaverton, OR",
+    "Bellevue": "Bellevue, WA",
+    "Seattle": "Seattle, WA",
+    "Tukwila": "Tukwila, WA",
+}
 
 
 class AsianFamilyMarketConnector(FlyerConnector):
@@ -21,6 +29,10 @@ class AsianFamilyMarketConnector(FlyerConnector):
 
     def __init__(self, location_id: str = DEFAULT_LOCATION_ID):
         self.location_id = location_id
+
+    @staticmethod
+    def list_locations() -> dict[str, str]:
+        return dict(LOCATIONS)
 
     def fetch(self) -> FlyerRef | None:
         params = {

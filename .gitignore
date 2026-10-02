@@ -1,0 +1,13 @@
+groceries.db
+latest.json
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+dist/
+.pytest_cache/
+.venv/
+venv/
+.DS_Store
+scripts/
+.worktrees/

@@ -65,6 +65,9 @@ def _select_current_flyer(flyers: list[dict], merchant: str) -> dict | None:
     # Flipp often lists both the actual weekly ad and a longer-running
     # insert/booklet (e.g. Albertsons' "Big Book of Savings") for the same
     # merchant at once; the shortest currently-valid one is the weekly ad.
+    # Some merchants also run a general-merchandise flyer over the very same
+    # dates (Costco's "Flyer" next to its "CP Grocery"), so a flyer Flipp
+    # files under Groceries wins over one it doesn't.
     today = date.today()
     candidates = []
     for flyer in flyers:
@@ -76,10 +79,11 @@ def _select_current_flyer(flyers: list[dict], merchant: str) -> dict | None:
             continue
         if not (valid_from <= today <= valid_to):
             continue
-        candidates.append((valid_to - valid_from, flyer))
+        is_grocery = "Groceries" in (flyer.get("categories_csv") or "")
+        candidates.append((not is_grocery, valid_to - valid_from, flyer))
     if not candidates:
         return None
-    return min(candidates, key=lambda c: c[0])[1]
+    return min(candidates, key=lambda c: c[:2])[2]
 
 
 def _parse_date(value) -> date | None:

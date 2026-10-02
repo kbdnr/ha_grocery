@@ -1,0 +1,65 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a store",
+        "description": "Each store is added separately, so run this once per store. Chains whose ad differs by location ask one more question: a ZIP code (Albertsons, Safeway, Fred Meyer, Grocery Outlet, Costco) or which store (99 Ranch Market, Asian Family Market). The rest have a single ad and are added straight away.",
+        "data": {
+          "store_type": "Store"
+        },
+        "data_description": {
+          "store_type": "Pick \"Mealie (recipes on sale)\" to connect a Mealie instance instead of a store."
+        }
+      },
+      "postal_code": {
+        "title": "ZIP code",
+        "description": "{store}'s weekly ad differs by area. Enter the ZIP code you shop in and the ad for the nearest {store} is used.",
+        "data": {
+          "location_id": "ZIP code"
+        },
+        "data_description": {
+          "location_id": "5-digit US ZIP code, for example 97005. To track a second area, add {store} again with another ZIP."
+        }
+      },
+      "store": {
+        "title": "Choose a store",
+        "description": "{store}'s weekly ad differs per store. Pick the one you shop at.",
+        "data": {
+          "location_id": "Store"
+        },
+        "data_description": {
+          "location_id": "To track a second store, add {store} again and pick another."
+        }
+      },
+      "store_number": {
+        "title": "Store number",
+        "description": "The list of {store} stores couldn't be loaded, so enter the store number by hand. Open your store's weekly ad on the store's website: the number is the last part of the page address, for example 1693 in {example_url}.",
+        "data": {
+          "location_id": "Store number"
+        }
+      },
+      "mealie": {
+        "title": "Connect Mealie",
+        "description": "Ranks your Mealie recipes by which ingredients are in this week's ads. Only ever reads from Mealie.",
+        "data": {
+          "url": "Mealie URL",
+          "token": "API token"
+        },
+        "data_description": {
+          "url": "The address you open Mealie at, for example {example_url}.",
+          "token": "Create one in Mealie under your profile, API Tokens."
+        }
+      }
+    },
+    "error": {
+      "invalid_postal_code": "Enter a 5-digit US ZIP code.",
+      "no_ad_found": "No current ad was found for this store near that ZIP code. Check the ZIP, or try a neighbouring one.",
+      "invalid_store_number": "Enter the store number.",
+      "cannot_connect": "Couldn't reach the service. Check the address and your connection, then try again.",
+      "invalid_auth": "Mealie rejected the API token."
+    },
+    "abort": {
+      "already_configured": "This store and location is already set up."
+    }
+  }
+}
