@@ -25,7 +25,7 @@ def _register(hass, store_type: str, flyer: FlyerRef | None) -> None:
     entry = MockConfigEntry(domain=DOMAIN, data={CONF_STORE_TYPE: store_type})
     entry.add_to_hass(hass)
     coordinator = MagicMock()
-    coordinator.data = flyer
+    coordinator.flyer = flyer
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {"coordinator": coordinator}
 
 

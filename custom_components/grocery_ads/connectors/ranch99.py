@@ -5,11 +5,14 @@ import requests
 from .base import BROWSER_HEADERS, FlyerConnector
 from ..schema import FlyerRef
 
-# 99 Ranch has no national weekly ad — deals vary per physical store. Full
-# zip->store lookup is out of scope (see CLAUDE.md future work); the config
-# flow just asks for the numeric store ID directly.
-DEFAULT_LOCATION_ID = "1007"
+# 99 Ranch has no national weekly ad — deals vary per physical store, each
+# identified by a numeric store ID. The config flow offers the stores by
+# name from STORES_URL, the site's own store-locator backend: a public,
+# unauthenticated POST (GET is rejected) returning every store grouped by
+# state (confirmed 2026-10-01, 66 stores).
+DEFAULT_LOCATION_ID = "1007"  # Arcadia, CA
 PROMOTIONS_URL_TEMPLATE = "https://www.99ranch.com/stores/promotions/{location_id}"
+STORES_URL = "https://www.99ranch.com/be-api/store/web/view/allStores"
 
 _NEXT_DATA_RE = re.compile(
     r'<script id="__NEXT_DATA__"[^>]*type="application/json"[^>]*>(.*?)</script>',
@@ -23,6 +26,15 @@ class Ranch99Connector(FlyerConnector):
 
     def __init__(self, location_id: str = DEFAULT_LOCATION_ID):
         self.location_id = location_id
+
+    @staticmethod
+    def list_locations() -> dict[str, str]:
+        """Store ID -> "City, ST" for every store, ordered by state then city."""
+        resp = requests.post(STORES_URL, json={}, headers=BROWSER_HEADERS, timeout=15)
+        resp.raise_for_status()
+        stores = [store for group in resp.json()["data"].values() for store in group]
+        stores.sort(key=lambda s: (s["state"], s["name"]))
+        return {str(s["id"]): f"{s['name']}, {s['state']}" for s in stores}
 
     def fetch(self) -> FlyerRef | None:
         url = PROMOTIONS_URL_TEMPLATE.format(location_id=self.location_id)

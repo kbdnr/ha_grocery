@@ -5,6 +5,7 @@ from datetime import date
 from custom_components.grocery_ads.connectors.ranch99 import (
     Ranch99Connector,
     PROMOTIONS_URL_TEMPLATE,
+    STORES_URL,
     DEFAULT_LOCATION_ID,
 )
 
@@ -78,3 +79,30 @@ def test_fetch_uses_custom_location_id():
 def test_default_location_id_matches_prior_hardcoded_value():
     connector = Ranch99Connector()
     assert connector.location_id == "1007"
+
+
+@rsps_lib.activate
+def test_list_locations_maps_store_id_to_city_ordered_by_state_then_city():
+    rsps_lib.add(
+        rsps_lib.POST,
+        STORES_URL,
+        json={
+            "code": 0,
+            "data": {
+                "Oregon": [
+                    {"id": 1695, "name": "Portland", "state": "OR"},
+                    {"id": 1693, "name": "Beaverton", "state": "OR"},
+                ],
+                "California": [{"id": 1007, "name": "Arcadia", "state": "CA"}],
+            },
+        },
+        status=200,
+    )
+
+    locations = Ranch99Connector.list_locations()
+
+    assert list(locations.items()) == [
+        ("1007", "Arcadia, CA"),
+        ("1693", "Beaverton, OR"),
+        ("1695", "Portland, OR"),
+    ]

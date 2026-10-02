@@ -18,6 +18,7 @@ Lovelace dashboard.
 - Safeway
 - Fred Meyer
 - Grocery Outlet
+- Costco
 
 Open to adding more stores later, but the pipeline should be built so adding a
 new store means writing one new "connector" module, not touching the rest of
@@ -35,6 +36,9 @@ same underlying dataset:
 2. **Lowest price per item across stores** — cross-store comparison
 3. **New/changed deals this week** — diff vs. last week's scrape
 4. **Category browsing** — produce, meat, dairy, etc.
+5. **Recipes on sale** — Mealie recipes ranked by which of their
+   ingredients are in this week's ads (added 2026-10-01, see "Recipe
+   overlay" below)
 
 ## Architecture
 
@@ -43,8 +47,8 @@ The project ships as a Home Assistant HACS custom integration —
 Services -> Add Integration, one config entry per store, rather than a
 standalone script run from cron. Each store's connector runs inside a
 `DataUpdateCoordinator` on HA's own update loop; the structured stores
-(H Mart, Zupan's, Albertsons, Safeway, Fred Meyer, Grocery Outlet) also
-feed a shared `AggregateCoordinator` that computes the lowest-price and
+(H Mart, Zupan's, Albertsons, Safeway, Fred Meyer, Grocery Outlet, Costco,
+Uwajimaya) also feed a shared `AggregateCoordinator` that computes the lowest-price and
 new-deals views. See `docs/plans/2026-09-21-hacs-integration-design.md`
 for the full design (entity/device layout, coordinator lifecycle, config
 flow) rather than duplicating it here.
@@ -55,7 +59,7 @@ custom_components/grocery_ads/
     hmart.py                # VTEX JSON API -> AdItem (structured)
     zupans.py                # WordPress REST API (HTML fragment) -> AdItem (structured)
     ranch99.py                 # scrapes __NEXT_DATA__ for flyer image URLs -> FlyerRef
-    uwajimaya.py                 # scrapes weekly-specials page for PDF URL -> FlyerRef
+    uwajimaya.py                 # two connectors: weekly-specials page PDF URL -> FlyerRef, and Flipp -> AdItem
     new_seasons.py                # scrapes /weekly-ad page for PDF URL -> FlyerRef
     market_of_choice.py             # follows a stable redirect to the current PDF -> FlyerRef
     asian_family_market.py    # base44 platform JSON entity API -> FlyerRef (per-store)
@@ -63,12 +67,16 @@ custom_components/grocery_ads/
     safeway.py                     # same Flipp API, different merchant -> AdItem (structured, per-zip)
     fred_meyer.py                     # same Flipp API (site itself is bot-blocked) -> AdItem (structured, per-zip)
     grocery_outlet.py                    # same Flipp API -> AdItem (structured, per-zip)
-    flipp.py                                # shared helper: postal_code -> current flyer -> AdItems, used by the four above
+    costco.py                               # same Flipp API (its grocery coupon book) -> AdItem (structured, per-zip)
+    flipp.py                                # shared helper: postal_code -> current flyer -> AdItems, used by the five above + Uwajimaya
     base.py                        # BaseConnector (AdItem) + FlyerConnector (FlyerRef) interfaces
   const.py                # DOMAIN, STORE_REGISTRY (store metadata + kind)
-  config_flow.py            # UI setup: pick a store per config entry, dup-entry guard
-  coordinator.py              # GroceryAdsCoordinator + AggregateCoordinator
-  sensor.py                     # GroceryAdsStoreSensor + the two aggregate sensors
+  config_flow.py            # UI setup: pick a store per config entry, then its ZIP / store, dup-entry guard
+  translations/en.json      # every label, help text and error the config flow shows
+  coordinator.py              # GroceryAdsCoordinator + AggregateCoordinator + RecipeCoordinator
+  sensor.py                     # GroceryAdsStoreSensor + the two aggregate sensors + the recipes sensor
+  matching.py                   # pure Python: ad item name -> Mealie food, and recipe ranking
+  mealie.py                     # read-only Mealie client + cached recipe -> foods index
   http.py                         # stable per-store view that proxies flyer bytes for iframe embedding
   __init__.py                     # entry setup/unload, aggregate-coordinator lifecycle
   schema.py                         # AdItem + FlyerRef dataclasses
@@ -144,12 +152,14 @@ tab).
   `<script id="__NEXT_DATA__">` JSON blob at
   `props.pageProps.detail.storeActivities`, a list of
   `{name, date, imageUrl}` — one entry per flyer category page.
-- The config flow collects a per-config-entry `location_id` for 99 Ranch
-  (`STORE_REGISTRY["99ranch"]["needs_location"]` is the only `True` entry),
-  wired through to `Ranch99Connector` via `DEFAULT_LOCATION_ID` as a
-  constructor default (commit `5111a0f`). Users still have to know/find
-  the numeric location ID themselves — resolving a zip code to that ID
-  automatically is not built.
+- Ads differ per store, so the entry stores a numeric store ID as
+  `location_id` (`needs_location: True`). The config flow offers the stores
+  by name: `POST https://www.99ranch.com/be-api/store/web/view/allStores`
+  with an empty JSON body (the site's own store-locator backend; public,
+  no auth, GET is rejected) returns all 66 stores grouped by state, each
+  with `id`, `name`, `state`, address and lat/long —
+  `Ranch99Connector.list_locations()`. Beaverton is `1693`, Portland
+  `1695`; the constructor default `1007` is Arcadia, CA.
 - `custom_components/grocery_ads/connectors/ranch99.py`.
 
 ### Uwajimaya — CONFIRMED, flyer (`FlyerConnector`)
@@ -200,7 +210,8 @@ tab).
   names. `DEFAULT_LOCATION_ID = "OR"` since that's the store in scope; other
   locations work by passing their code as `location_id`, same
   `needs_location` pattern as 99 Ranch (`STORE_REGISTRY["asian_family_market"]["needs_location"]`
-  is `True`).
+  is `True`). The four codes are the `LOCATIONS` dict in the connector,
+  shown as a dropdown in the config flow.
 - There's also a separate, seemingly-abandoned `WeeklyAd` entity
   (singular, no `store` field, one stale record from February) — not used;
   `HomepageWeeklyAd` is the live per-store data actually rendered on the
@@ -261,6 +272,31 @@ tab).
 - `custom_components/grocery_ads/connectors/flipp.py` (shared),
   `albertsons.py`, `safeway.py`, `fred_meyer.py`, `grocery_outlet.py`.
 
+### Costco, and Uwajimaya's items — CONFIRMED, structured, via Flipp (2026-10-01)
+- Both are on the same Flipp aggregator endpoint as the four stores above
+  (Flipp's merchant strings are `"Costco "` and `"Uwajimaya\t"`, trailing
+  whitespace included — `flipp.py` strips it before comparing).
+- **Costco** runs two flyers over the same dates: "Flyer" (general
+  merchandise/pharmacy/automotive) and "CP Grocery". Shortest-date-range
+  alone can't tell them apart, so `_select_current_flyer` prefers a flyer
+  whose `categories_csv` contains `Groceries`, then the shortest range.
+  The grocery book still has non-food in it (tape, lotion); that's left in
+  the raw feed and simply never matches a food. `needs_location: True`.
+- **Uwajimaya** is the one store with both shapes: `UwajimayaItemsConnector`
+  (Flipp, ~35 items/week) is its registry `connector`, and the original
+  PDF-scraping `UwajimayaConnector` is its `flyer_connector`.
+  `GroceryAdsCoordinator` runs both and keeps the FlyerRef on
+  `coordinator.flyer` (for flyer-only stores that's the same object as
+  `coordinator.data`), which is what `http.py` and the sensor's
+  `urls`/`media_type` attributes read. One source failing doesn't take the
+  other down; the update only fails if both do.
+  `needs_location` stays `False` (items are read for the default 97005) so
+  the config entry created when Uwajimaya was flyer-only keeps working
+  without migration. Its sensor state changed from the flyer's valid_to
+  date to the item count; the date is now the `flyer_valid_to` attribute.
+- Flipp lists two identical Uwajimaya "Indexed Weekly" flyers; either one
+  is fine.
+
 ### Whole Foods Market — REJECTED, no public data (2026-09-21)
 - `wholefoodsmarket.com/sales-flyer` is a JS-rendered shell with no
   `__NEXT_DATA__`/embedded item data in the initial HTML payload, and
@@ -291,6 +327,76 @@ tab).
   headless-browser challenge solving) — that crosses from "look like a
   normal browser request" into deliberately defeating bot protection,
   which is out of scope for this project.
+
+## Config flow: how a location is asked for (2026-10-01)
+
+`location_id` means three different things across stores, and the original
+single free-text "location" step (with no translations file, so the field
+was literally labelled `location_id`) didn't say which. Each
+`needs_location` store now declares a `location_kind` in `STORE_REGISTRY`,
+and the entry data shape is unchanged (`{store_type, location_id}`), so
+existing entries need no migration:
+
+- `LOCATION_POSTAL_CODE` (the five Flipp stores) -> step `postal_code`: a
+  5-digit ZIP, then the connector's `fetch()` is run once; no items is the
+  `no_ad_found` error instead of an entry that sits at 0. Flipp answers an
+  unknown ZIP with an empty list, not an HTTP error. Costco's coupon book
+  came back for every ZIP tried (even 99950, Ketchikan), so the check
+  doesn't catch a wrong ZIP for it.
+- `LOCATION_STORE` (99 Ranch, Asian Family Market) -> step `store`: a
+  dropdown of the connector's `list_locations()` (`{location_id: label}`),
+  and the label goes in the entry title ("99 Ranch Market (Beaverton,
+  OR)"). If the list can't be loaded the flow drops to step
+  `store_number`, the old typed-in field with an explanation.
+- All wording lives in `translations/en.json`. hassfest rejects URLs in
+  translation strings, so example addresses are passed as
+  `description_placeholders` from `config_flow.py`.
+- A new connector that needs a location sets `location_kind` and, for
+  `LOCATION_STORE`, adds a `list_locations()`; no config-flow change.
+- Not built: a reconfigure step (changing a location means delete and
+  re-add), and sorting 99 Ranch's list by distance from HA's home.
+
+## Recipe overlay (Mealie) — added 2026-10-01
+
+A separate config entry type, `ENTRY_TYPE_MEALIE` (picked from the same
+dropdown as the stores, stored under `CONF_STORE_TYPE` but deliberately not
+in `STORE_REGISTRY`), connects a Mealie instance by URL + API token and
+creates `sensor.recipes_on_sale`.
+
+- `matching.py` is pure Python and holds all the judgement. The join key is
+  Mealie's food vocabulary (name, plural, aliases). An ad item matches a
+  food only when the food phrase *ends* the item name (the head noun),
+  after splitting alternatives on "or"/commas. Known rules, each there
+  because of a real false match in the 2026-09-30 ads: whole-item block
+  words (`_NOT_INGREDIENT`: "Hand Cream", "Prebiotic Soda Orange"), pairs
+  ("Mac & Cheese"), chocolate shapes ("Chocolate Pumpkins"), lone flavour
+  words after a comma ("Noodle Bowl, Chicken"), and elision ("Orange or
+  Carrot Juice" is orange juice). Trailing cut/packaging words
+  (`_TAIL_NOISE`) are only looked past when the name doesn't match with
+  them. Measured on that week: 741 priced items across 7 Flipp stores ->
+  291 matched -> 123 foods (64 fresh).
+- Known wrong matches that are left alone: brand-as-product ("Russell
+  Stover Pumpkin" is candy; `AdItem` has no brand field to strip), wine
+  named like food ("La Crema"), and ready-to-eat items ("Fresh Roasted
+  Chicken"). Misses are mostly vocabulary: cuts with no Mealie food or
+  alias ("Top Round Steaks", "Flanken Style Ribs") — fixed by adding the
+  alias in Mealie, not here.
+- Ranking: a recipe is listed if at least one on-sale food has a fresh
+  label (`FRESH_LABELS`, Mealie's default label names); score is the sum
+  of log(recipes / recipes using the food) over those, so staples count
+  for almost nothing. Ties go to coverage of the whole ingredient list.
+- `mealie.py`: `GET /api/recipes` (summaries) has no ingredients, so each
+  recipe is fetched once and the food ids cached in
+  `<config>/grocery_ads/mealie_recipes.json`, keyed by slug and
+  re-fetched only when `updatedAt` changes. The first sync runs as a
+  background task so entry setup isn't held up. Read-only: GETs only.
+- `RecipeCoordinator` re-reads Mealie every 6 hours; the matching itself
+  is redone (no Mealie I/O) whenever an items store's coordinator updates
+  or unloads, via a listener registered in `__init__.py`. It reads ad items
+  from the live store coordinators, not from SQLite.
+- "On sale" means "in the ad": Flipp gives no regular price and a discount
+  percentage on only ~1 in 5 items. Seasonality isn't built — it would
+  come from the history `ad_items` accumulates in SQLite.
 
 ## Build order (complete)
 1. ~~`connectors/hmart.py`~~ — done.
@@ -323,13 +429,26 @@ tab).
    findings above. Needs a per-entry postal code (`needs_location`, default
    `97005`/Beaverton OR) like 99 Ranch/Asian Family Market.
 
+10. ~~`connectors/costco.py`, Uwajimaya items alongside its PDF~~ — done
+    2026-10-01, both via Flipp.
+11. ~~Recipe overlay~~ — done 2026-10-01 (`matching.py`, `mealie.py`,
+    `RecipeCoordinator`, `sensor.recipes_on_sale`, Recipes dashboard tab).
+
 ## Open questions / next steps
+- [ ] `Database.get_latest_items()` selects `MAX(scrape_batch)` across all
+      stores, but since the HACS conversion each store's coordinator
+      inserts its own batch — so the Lowest Price and New Deals sensors
+      only ever reflect whichever store refreshed last. Noticed 2026-10-01
+      while building the recipe overlay (which avoids it by reading the
+      live coordinators); not fixed.
+- [ ] Recipe overlay: no seasonality yet, and `FRESH_LABELS` /
+      the matcher's word lists are constants rather than configuration.
 - [x] ~~Set up the cron schedule~~ — no longer applicable: the HACS
       integration polls via each `DataUpdateCoordinator`'s own update
       interval, so there's no external scheduler to install.
-- [ ] 99 Ranch's config flow collects a numeric `location_id` per config
-      entry, but there's no zip→location-ID resolution — the user has to
-      know/find the numeric ID themselves. That lookup remains future work.
+- [x] ~~99 Ranch's config flow needs a numeric `location_id` the user has
+      to find themselves~~ — done 2026-10-01: stores are picked by name
+      from a dropdown (see "Config flow" above).
 - [ ] Zupan's, Albertsons', Safeway's, Fred Meyer's, and Grocery Outlet's
       `category` is always empty (none of those sources separate items by
       department) — the Category tab will only ever show H Mart items
@@ -343,7 +462,6 @@ tab).
       each store's own site — a bigger single point of failure than H
       Mart/Zupan's two independent backends. Not addressed; noted as a risk
       in the per-store findings above.
-- [ ] Like 99 Ranch, the postal code for these four stores is a manually
-      entered config-flow value (`DEFAULT_LOCATION_ID = "97005"`, no
-      zip-code lookup/validation) — same future work as 99 Ranch's
-      location ID.
+- [x] ~~The postal code for the Flipp stores is entered with no
+      validation~~ — done 2026-10-01: format-checked and tried against
+      Flipp in the config flow.

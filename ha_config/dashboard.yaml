@@ -33,19 +33,28 @@
 #
 # Two kinds of stores feed this:
 #  - Structured (H Mart, Zupan's, Albertsons, Safeway, Fred Meyer, Grocery
-#    Outlet): individual items with price/category (the last four also lack
-#    a clean `unit` field — Flipp's item data doesn't provide one), so they
-#    drive the Lowest Price / New Deals / Category tabs. The last four go
-#    through a shared third-party aggregator (Flipp) rather than each
-#    store's own site backend — see CLAUDE.md.
-#  - Flyer-only (99 Ranch, Uwajimaya, New Seasons, Market of Choice, Asian
-#    Family Market): the weekly ad is a PDF or a set of flyer images with no
+#    Outlet, Costco, Uwajimaya): individual items with price/category (the
+#    last six also lack a clean `unit` field — Flipp's item data doesn't
+#    provide one), so they drive the Lowest Price / New Deals / Category
+#    tabs. The last six go through a shared third-party aggregator (Flipp)
+#    rather than each store's own site backend — see CLAUDE.md.
+#  - Flyer-only (99 Ranch, New Seasons, Market of Choice, Asian Family
+#    Market): the weekly ad is a PDF or a set of flyer images with no
 #    machine-readable item data, so they're shown directly (inline images,
 #    or a link to the PDF) on the Raw Feed tab only — they can't participate
 #    in price comparison or diffing. Each flyer store has its own sensor
 #    (there is no combined "flyers" sensor); its `urls`/`media_type`
 #    attributes and its state (the flyer's valid_to date) come from that
 #    store's own entity.
+#  - Uwajimaya is both: its sensor's state is the item count like any other
+#    structured store, and it also carries the PDF's `urls`/`media_type`
+#    plus a `flyer_valid_to` attribute (where a flyer-only store uses its
+#    state for that date).
+#
+# The Recipes tab needs the "Mealie (recipes on sale)" config entry, added
+# from the same Add Integration dialog as the stores. It creates
+# sensor.recipes_on_sale: Mealie recipes ranked by how much of what they
+# need is in this week's ads, matched through Mealie's own foods/aliases.
 
 title: Grocery Ads
 views:
@@ -138,6 +147,34 @@ views:
           {%- endif %}
 
       - type: markdown
+        title: Costco This Week
+        content: |
+          {%- set items = state_attr('sensor.costco_ads', 'items') or [] -%}
+          {% if items | length == 0 -%}
+          _No data yet — run the scraper._
+          {%- else -%}
+          | Item | Price | Sale |
+          | --- | --- | --- |
+          {% for item in items | sort(attribute='item_name') -%}
+          | {{ item.item_name }} | ${{ '%.2f' | format(item.price) }} | {{ item.sale_type }} |
+          {% endfor -%}
+          {%- endif %}
+
+      - type: markdown
+        title: Uwajimaya This Week
+        content: |
+          {%- set items = state_attr('sensor.uwajimaya_ads', 'items') or [] -%}
+          {% if items | length == 0 -%}
+          _No data yet — run the scraper._
+          {%- else -%}
+          | Item | Price | Sale |
+          | --- | --- | --- |
+          {% for item in items | sort(attribute='item_name') -%}
+          | {{ item.item_name }} | ${{ '%.2f' | format(item.price) }} | {{ item.sale_type }} |
+          {% endfor -%}
+          {%- endif %}
+
+      - type: markdown
         title: 99 Ranch Market — Weekly Flyer
         content: |
           {%- set urls = state_attr('sensor.99_ranch_market_ads', 'urls') or [] -%}
@@ -158,7 +195,7 @@ views:
           {% if urls | length == 0 -%}
           _No flyer found this week._
           {%- else -%}
-          Valid through {{ states('sensor.uwajimaya_ads') }} —
+          Valid through {{ state_attr('sensor.uwajimaya_ads', 'flyer_valid_to') }} —
           [open in a new tab]({{ urls[0] }})
           {%- endif %}
       - type: iframe
@@ -212,7 +249,7 @@ views:
     icon: mdi:cash-multiple
     cards:
       - type: markdown
-        title: Best Price Per Item (H Mart, Zupan's, Albertsons, Safeway, Fred Meyer, Grocery Outlet)
+        title: Best Price Per Item (H Mart, Zupan's, Albertsons, Safeway, Fred Meyer, Grocery Outlet, Costco, Uwajimaya)
         content: |
           {%- set prices = state_attr('sensor.lowest_price', 'prices') or {} -%}
           {% if prices | length == 0 -%}
@@ -274,7 +311,9 @@ views:
                           + (state_attr('sensor.albertsons_ads', 'items') or [])
                           + (state_attr('sensor.safeway_ads', 'items') or [])
                           + (state_attr('sensor.fred_meyer_ads', 'items') or [])
-                          + (state_attr('sensor.grocery_outlet_ads', 'items') or []) -%}
+                          + (state_attr('sensor.grocery_outlet_ads', 'items') or [])
+                          + (state_attr('sensor.costco_ads', 'items') or [])
+                          + (state_attr('sensor.uwajimaya_ads', 'items') or []) -%}
           {%- set categories = items | map(attribute='category') | map('default', 'Uncategorized', true) | unique | sort | list -%}
           {% for cat in categories -%}
           ### {{ cat if cat else 'Uncategorized' }}
@@ -282,4 +321,42 @@ views:
           - **{{ item.item_name }}** — ${{ '%.2f' | format(item.price) }}{{ ' / ' + item.unit if item.unit else '' }} ({{ item.store }})
           {% endfor %}
 
+          {% endfor -%}
+
+  - title: Recipes
+    path: recipes
+    icon: mdi:silverware-fork-knife
+    cards:
+      - type: markdown
+        title: Recipes On Sale This Week
+        content: |
+          {%- set recipes = state_attr('sensor.recipes_on_sale', 'recipes') or [] -%}
+          {% if recipes | length == 0 -%}
+          _Nothing yet — either no Mealie entry is set up, its first sync is
+          still running, or no recipe has a fresh ingredient in this week's ads._
+          {%- else -%}
+          Top {{ recipes | length }} of {{ states('sensor.recipes_on_sale') }} recipes with a
+          fresh ingredient on sale
+          ({{ state_attr('sensor.recipes_on_sale', 'recipes_with_foods') }} of
+          {{ state_attr('sensor.recipes_on_sale', 'recipes_indexed') }} Mealie recipes have parsed ingredients).
+
+          {% for recipe in recipes -%}
+          ### [{{ recipe.name }}]({{ recipe.url }})
+          {{ recipe.on_sale }} of {{ recipe.ingredients }} ingredients on sale
+          {% for match in recipe.matches -%}
+          - **{{ match.food }}** — ${{ '%.2f' | format(match.price) }} @ {{ match.store }} _({{ match.item }})_
+          {% endfor %}
+
+          {% endfor -%}
+          {%- endif %}
+
+      - type: markdown
+        title: Ingredients On Sale
+        content: |
+          {%- set foods = state_attr('sensor.recipes_on_sale', 'foods') or {} -%}
+          {% if foods | length == 0 -%}
+          _No ad items matched a Mealie food yet._
+          {% endif -%}
+          {% for food, offer in foods.items() -%}
+          **{{ food }}** — ${{ '%.2f' | format(offer.price) }} @ {{ offer.store }} _({{ offer.item }})_
           {% endfor -%}

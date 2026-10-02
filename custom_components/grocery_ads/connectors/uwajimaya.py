@@ -2,10 +2,16 @@ import re
 from datetime import date, datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
-from .base import BROWSER_HEADERS, FlyerConnector
-from ..schema import FlyerRef
+from . import flipp
+from .base import BROWSER_HEADERS, BaseConnector, FlyerConnector
+from ..schema import AdItem, FlyerRef
 
 WEEKLY_AD_PAGE = "https://www.uwajimaya.com/weekly-specials/"
+# Uwajimaya's own site only has the PDF, but Flipp indexes the same weekly
+# ad item by item (confirmed 2026-10-01), so the store gets both: items from
+# Flipp via UwajimayaItemsConnector, and the PDF from UwajimayaConnector.
+MERCHANT_NAME = "Uwajimaya"
+DEFAULT_LOCATION_ID = "97005"  # Beaverton, OR
 _FILENAME_DATE_RE = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{2})")
 
 
@@ -46,3 +52,13 @@ class UwajimayaConnector(FlyerConnector):
             return date(2000 + year, month, day)
         except ValueError:
             return None
+
+
+class UwajimayaItemsConnector(BaseConnector):
+    store_id = "uwajimaya"
+
+    def __init__(self, location_id: str = DEFAULT_LOCATION_ID):
+        self.location_id = location_id
+
+    def fetch(self) -> list[AdItem]:
+        return flipp.fetch_ad_items(MERCHANT_NAME, self.store_id, self.location_id)

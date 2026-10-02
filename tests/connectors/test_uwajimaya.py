@@ -1,7 +1,12 @@
 import pytest
 import responses as rsps_lib
 from datetime import date, timedelta
-from custom_components.grocery_ads.connectors.uwajimaya import UwajimayaConnector, WEEKLY_AD_PAGE
+from custom_components.grocery_ads.connectors import flipp
+from custom_components.grocery_ads.connectors.uwajimaya import (
+    UwajimayaConnector,
+    UwajimayaItemsConnector,
+    WEEKLY_AD_PAGE,
+)
 
 MOCK_HTML = """
 <html><body>
@@ -33,3 +38,36 @@ def test_fetch_returns_flyer_with_pdf_url_and_dates():
 def test_fetch_returns_none_when_no_pdf_link():
     rsps_lib.add(rsps_lib.GET, WEEKLY_AD_PAGE, body="<html><body>no link here</body></html>", status=200)
     assert UwajimayaConnector().fetch() is None
+
+
+@rsps_lib.activate
+def test_items_connector_fetches_ad_items_from_flipp():
+    today = date.today()
+    rsps_lib.add(
+        rsps_lib.GET,
+        flipp.FLYERS_URL,
+        json={
+            "flyers": [
+                {
+                    "id": 7,
+                    "merchant": "Uwajimaya\t",  # Flipp's own value has the trailing tab
+                    "valid_from": (today - timedelta(days=1)).isoformat(),
+                    "valid_to": (today + timedelta(days=5)).isoformat(),
+                },
+            ]
+        },
+        status=200,
+    )
+    rsps_lib.add(
+        rsps_lib.GET,
+        flipp.FLYER_ITEMS_URL.format(flyer_id=7),
+        json={"items": [{"name": "Thin Sliced Pork Belly", "price": "6.99", "discount": 22}]},
+        status=200,
+    )
+
+    items = UwajimayaItemsConnector().fetch()
+
+    assert len(items) == 1
+    assert items[0].store == "uwajimaya"
+    assert items[0].item_name == "Thin Sliced Pork Belly"
+    assert items[0].price == 6.99
